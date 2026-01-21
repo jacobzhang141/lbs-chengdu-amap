@@ -1,0 +1,55 @@
+plugins {
+    alias(libs.plugins.android.application)
+}
+
+android {
+    namespace 'com.byd.chengdulbs'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "com.byd.chengdulbs"
+        minSdk 30
+        targetSdk 36
+        versionCode 1
+        versionName "1.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    // 1. 建议更新：将 Java 版本升级到 21 (配合 compileSdk 35)
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    // 如果用 Kotlin，通常还需要加这个（没有 kotlin 可以忽略）
+    // kotlinOptions {
+    //     jvmTarget = '17'
+    // }
+
+    // 2. 关键修复：手动添加这个 packaging 块来解决 16KB 报错
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+}
+
+dependencies {
+    implementation libs.appcompat
+    implementation libs.material
+    implementation libs.activity
+    implementation libs.constraintlayout
+    testImplementation libs.junit
+    androidTestImplementation libs.ext.junit
+    androidTestImplementation libs.espresso.core
+    // 注意：依然建议未来手动下载高德 SDK 替换这个 integration 版本
+    implementation('com.amap.api:3dmap-location-search:latest.integration')
+}
