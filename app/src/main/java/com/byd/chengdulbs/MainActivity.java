@@ -2,6 +2,7 @@ package com.byd.chengdulbs;
 
 import android.graphics.Color;
 import android.os.Bundle;
+import android.widget.TextView;
 
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
@@ -17,14 +18,22 @@ import com.amap.api.maps.model.GroundOverlayOptions;
 import com.amap.api.maps.model.LatLng;
 import com.amap.api.maps.model.LatLngBounds;
 
+import com.amap.api.maps.model.Marker;
+import com.amap.api.maps.model.MarkerOptions;
 import com.amap.api.maps.model.MyLocationStyle;
 import com.byd.chengdulbs.R;
+import com.byd.chengdulbs.model.BuildingModel;
+import com.byd.chengdulbs.util.DataUtils;
+import com.byd.chengdulbs.view.AudioGuideDialog;
 
-public class MainActivity extends AppCompatActivity {
+import java.util.List;
+
+public class MainActivity extends AppCompatActivity implements AMap.OnMarkerClickListener{
 
     private AMap amap;
     private MapView mapview;
-
+    // 保存数据列表，方便点击时查询
+    private List<BuildingModel> buildingList;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -50,8 +59,17 @@ public class MainActivity extends AppCompatActivity {
         //高德地图部分结束
         MyLocationStyle myLocationStyle;
         myLocationStyle = new MyLocationStyle();//初始化定位蓝点样式类
-//        myLocationStyle.myLocationType(MyLocationStyle.LOCATION_TYPE_LOCATION_ROTATE);//连续定位、且将视角移动到地图中心点，定位点依照设备方向旋转，并且会跟随设备移动。（1秒1次定位）如果不设置myLocationType，默认也会执行此种模式。
+        /*
+         * 其他选项：
+         * LOCATION_TYPE_LOCATION_ROTATE: 连续定位、且将视角移动到地图中心点(1秒1次定位)
+         * LOCATION_TYPE_LOCATION_ROTATE_NO_CENTER: 连续定位、蓝点不会移动到地图中心点(20250414前使用此方法)
+         * LOCATION_TYPE_MAP_ROTATE: 连续定位、蓝点移动到地图中心点
+         */
+        //myLocationStyle.myLocationType(MyLocationStyle.LOCATION_TYPE_LOCATION_ROTATE);//连续定位、且将视角移动到地图中心点，定位点依照设备方向旋转，并且会跟随设备移动。（1秒1次定位）如果不设置myLocationType，默认也会执行此种模式。
         myLocationStyle.myLocationType(MyLocationStyle.LOCATION_TYPE_LOCATION_ROTATE_NO_CENTER);//连续定位、蓝点不会移动到地图中心点，定位点依照设备方向旋转，并且蓝点会跟随设备移动。
+
+//        myLocationStyle.myLocationType(MyLocationStyle.LOCATION_TYPE_MAP_ROTATE_NO_CENTER);/*定位、但不会移动到地图中心点，地图依照设备方向旋转，并且会跟随设备移动。*/
+
         myLocationStyle.interval(1000); //设置连续定位模式下的定位间隔，只在连续定位模式下生效，单次定位模式下不会生效。单位为毫秒。/设置定位频次方法，单位：毫秒，默认值：1000毫秒，如果传小于1000的任何值将按照1000计算。该方法只会作用在会执行连续定位的工作模式上。
         // 自定义精度圆圈的样式
         //myLocationStyle.strokeColor(Color.BLUE); // 设置精度圆圈的边框颜色
@@ -72,8 +90,101 @@ public class MainActivity extends AppCompatActivity {
         //关闭文字
         amap.showMapText(false);
 
+        // 2. 加载数据并绘制 Marker (新代码)
+        loadAndDrawMarkers();
     }
 
+    private void loadAndDrawMarkers() {
+        if (amap == null) return;
+
+        buildingList = DataUtils.loadBuildings(this);
+        amap.setOnMarkerClickListener(this);
+
+        for (BuildingModel building : buildingList) {
+            LatLng latLng = building.getLatLng();
+
+            if (latLng != null) {
+                // 1. 创建 View (每次循环都新造一个)
+                android.view.View markerView = android.view.LayoutInflater.from(this)
+                        .inflate(R.layout.marker_layout, null);
+                TextView tvName = markerView.findViewById(R.id.tv_marker_name);
+
+                // 2. 设置文字
+                String labelText = building.getCommonName();
+                if (labelText == null || labelText.isEmpty()) labelText = building.getName();
+                tvName.setText(labelText);
+
+                // ▼▼▼▼▼▼▼▼▼▼ 核心修改：在这里插入变色代码 ▼▼▼▼▼▼▼▼▼▼
+                try {
+                    // (A) 获取文字背景 (那个圆角胶囊 xml)
+                    android.graphics.drawable.GradientDrawable bgDrawable =
+                            (android.graphics.drawable.GradientDrawable) tvName.getBackground();
+
+                    // (B) 关键一步：mutate()
+                    // 意思是：“我要修改这个背景，但别影响其他用同一种背景的 View”
+                    bgDrawable.mutate();
+
+                    // (C) 设置颜色 (调用上面的辅助方法)
+                    bgDrawable.setColor(getMarkerColor(building));
+
+                } catch (Exception e) {
+                    e.printStackTrace(); // 防止万一转型失败导致崩溃
+                }
+                // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+                // 3. 转成图片
+                com.amap.api.maps.model.BitmapDescriptor customIcon =
+                        BitmapDescriptorFactory.fromView(markerView);
+
+                MarkerOptions options = new MarkerOptions()
+                        .position(latLng)
+                        .title(building.getName())
+                        .snippet(building.getCommonName())
+                        .icon(customIcon)
+                        .anchor(0.5f, 0.5f);
+
+                Marker marker = amap.addMarker(options);
+                marker.setObject(building);
+            }
+        }
+    }
+
+    @Override
+    public boolean onMarkerClick(Marker marker) {
+        // 从 Marker 中取出我们绑定的 BuildingModel 对象
+        Object obj = marker.getObject();
+
+        if (obj instanceof BuildingModel) {
+            BuildingModel building = (BuildingModel) obj;
+
+//            // 获取自动生成的路径
+//            String audioPath = building.getAudioPath(); // 如 "audio/audio_2a.mp3"
+//            String srtPath = building.getSrtPath();     // 如 "subtitle/subtitle_2a.srt"
+//            String title = building.getCommonName();    // 显示通俗名称，比如 "食堂"
+//
+//            // 弹出上一条回答里写的 AudioGuideDialog
+//            showAudioDialog(title, audioPath, srtPath);
+            try {
+                AudioGuideDialog dialog = new AudioGuideDialog(this, building);
+                dialog.show();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        return true; // 消费点击事件
+    }
+
+    private void showAudioDialog(BuildingModel building) {
+        try {
+            // 确保你已经把 AudioGuideDialog 代码复制进来了
+            AudioGuideDialog dialog = new AudioGuideDialog(this, building);
+            dialog.show();
+        } catch (Exception e) {
+            e.printStackTrace();
+            // 如果文件不存在（比如只有数据没有放mp3），可以Toast提示
+            // Toast.makeText(this, "暂无语音介绍", Toast.LENGTH_SHORT).show();
+        }
+    }
 
 //     * 初始化AMap对象*
 
@@ -110,6 +221,46 @@ public class MainActivity extends AppCompatActivity {
             mapview.getMap().getUiSettings().setZoomGesturesEnabled(true);     // 手指调整缩放开关
             mapview.getMap().moveCamera(CameraUpdateFactory.zoomTo(17f)); // 设置缩放级别为17
         }
+    }
+
+    /**
+     * 根据建筑的【通俗名称】来决定颜色，这样视觉上更直观
+     */
+    private int getMarkerColor(BuildingModel building) {
+        String name = building.getCommonName();
+        // 如果通俗名为空，就用正式名作为补充判断
+        if (name == null || name.isEmpty()) {
+            name = building.getName();
+        }
+        if (name == null) name = ""; // 防止空指针
+
+        // --- 1. (红色) ---
+        // 包含：大宗气站
+//        if (name.contains("大宗气站") || name.contains("")) {
+        if (name.contains("大宗气站")) {
+            return android.graphics.Color.parseColor("#CCFF4444"); // 🔴 警示红
+        }
+
+        // --- 2. 仓库/ 燃气站类 (橙色) ---
+        // 包含：
+        if (name.contains("仓") || name.contains("库") || name.contains("燃气")
+            ) {
+            return android.graphics.Color.parseColor("#CCFF8800"); // 🟠 活力橙
+        }
+
+        // --- 3. 动力/环保/基建类 (青绿色) ---
+        // 包含：水、动力、配电、变电、废处理、调压
+        if (name.contains("水") || name.contains("综合动力") || name.contains("泵")
+                || name.contains("废") || name.contains("特气") || name.contains("硅烷")
+                || name.contains("气化") || name.contains("生产") || name.contains("柴油")
+                || name.contains("变电")
+            ) {
+            return android.graphics.Color.parseColor("#CC00BFA5"); // 🟢 青松绿
+        }
+
+        // --- 4. 核心生产厂房 (深蓝色) ---
+        // 其他所有没命中的，默认蓝色
+        return android.graphics.Color.parseColor("#CC2E5BFF");    // 🔵 科技蓝
     }
 
 //     * 往地图上添加一个groundoverlay覆盖物//
